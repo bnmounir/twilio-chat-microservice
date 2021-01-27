@@ -1,7 +1,8 @@
-const Twilio = require('twilio');
+const Twilio = require("twilio");
 
-const config = require('./config');
-const nameGenerator = require('../name_generator');
+const config = require("./config");
+const nameGenerator = require("../name_generator");
+const { options } = require("../app");
 
 // Access Token used for Video, IP Messaging, and Sync
 const AccessToken = Twilio.jwt.AccessToken;
@@ -19,43 +20,45 @@ const SyncGrant = AccessToken.SyncGrant;
  *         {Object.token} String token generated
  */
 function tokenGenerator(identity = 0) {
-  // Create an access token which we will sign and return to the client
-  const token = new AccessToken(
-    config.TWILIO_ACCOUNT_SID,
-    config.TWILIO_API_KEY,
-    config.TWILIO_API_SECRET
-  );
+	// Create an access token which we will sign and return to the client
+	const token = new AccessToken(
+		config.TWILIO_ACCOUNT_SID,
+		config.TWILIO_API_KEY,
+		config.TWILIO_API_SECRET,
+		// this is important 24hrs limit on the token
+		{ ttl: 86400 }
+	);
+	console.log(token);
+	// Assign the provided identity or generate a new one
+	token.identity = identity || nameGenerator();
 
-  // Assign the provided identity or generate a new one
-  token.identity = identity || nameGenerator();
+	// Grant the access token Twilio Video capabilities
+	const videoGrant = new VideoGrant();
+	token.addGrant(videoGrant);
 
-  // Grant the access token Twilio Video capabilities
-  const videoGrant = new VideoGrant();
-  token.addGrant(videoGrant);
+	if (config.TWILIO_CHAT_SERVICE_SID) {
+		// Create a "grant" which enables a client to use IPM as a given user,
+		// on a given device
+		const chatGrant = new ChatGrant({
+			serviceSid: config.TWILIO_CHAT_SERVICE_SID,
+		});
+		token.addGrant(chatGrant);
+	}
 
-  if (config.TWILIO_CHAT_SERVICE_SID) {
-    // Create a "grant" which enables a client to use IPM as a given user,
-    // on a given device
-    const chatGrant = new ChatGrant({
-      serviceSid: config.TWILIO_CHAT_SERVICE_SID
-    });
-    token.addGrant(chatGrant);
-  }
+	if (config.TWILIO_SYNC_SERVICE_SID) {
+		// Point to a particular Sync service, or use the account default to
+		// interact directly with Functions.
+		const syncGrant = new SyncGrant({
+			serviceSid: config.TWILIO_SYNC_SERVICE_SID || "default",
+		});
+		token.addGrant(syncGrant);
+	}
 
-  if (config.TWILIO_SYNC_SERVICE_SID) {
-    // Point to a particular Sync service, or use the account default to
-    // interact directly with Functions.
-    const syncGrant = new SyncGrant({
-      serviceSid: config.TWILIO_SYNC_SERVICE_SID || 'default'
-    });
-    token.addGrant(syncGrant);
-  }
-
-  // Serialize the token to a JWT string and include it in a JSON response
-  return {
-    identity: token.identity,
-    token: token.toJwt()
-  };
+	// Serialize the token to a JWT string and include it in a JSON response
+	return {
+		identity: token.identity,
+		token: token.toJwt(),
+	};
 }
 
 module.exports = tokenGenerator;
